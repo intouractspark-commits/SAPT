@@ -252,6 +252,9 @@ public class StudentServiceImpl implements StudentService {
                 subType = activitySubTypeRepository.findByCategoryIdAndLabelIgnoreCase(catId, trimmedLabel)
                         .orElseThrow(() -> SaptException.badRequest("Could not create achievement sub-type: " + e.getMessage()));
             }
+        } else if (subType.getPoints() == 0 && points > 0) {
+            subType.setPoints(points);
+            subType = activitySubTypeRepository.save(subType);
         }
 
         return StudentDto.CustomCategoryResponse.builder()

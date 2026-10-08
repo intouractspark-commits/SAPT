@@ -8,6 +8,39 @@ import { StatCard, Badge, useToast, EmptyState, Avatar, StarsDisplay } from '../
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { apiUpdateProfile, apiGetMentors, studentApi } from '../../../utils/api';
 
+export const formatDateTime = (rawDateTime, rawDate) => {
+  const val = rawDateTime || rawDate;
+  if (!val) return '—';
+  try {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return String(val);
+
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const datePart = `${yyyy}-${mm}-${dd}`;
+
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    const strHours = String(hours).padStart(2, '0');
+    const timePart = `${strHours}:${minutes} ${ampm}`;
+
+    if (typeof val === 'string' && val.length === 10 && val.includes('-') && !rawDateTime) {
+      return val;
+    }
+
+    if (d.getHours() === 0 && d.getMinutes() === 0 && typeof val === 'string' && val.length <= 10) {
+      return datePart;
+    }
+
+    return `${datePart} ${timePart}`;
+  } catch (_) {
+    return String(val);
+  }
+};
+
 // ---- Submission Form ----
 export const StudentSubmission = () => {
   const { user } = useAuth();
@@ -653,6 +686,7 @@ export const StudentMetrics = () => {
                     <table class="table">
                       <thead>
                         <tr>
+                          <th>Submitted Date & Time</th>
                           <th>Title</th>
                           <th>Category</th>
                           <th>Achievement Type</th>
@@ -666,6 +700,7 @@ export const StudentMetrics = () => {
                           const badgeClass = s.status === 'approved' ? 'badge-approved' : s.status === 'rejected' ? 'badge-rejected' : 'badge-pending';
                           return `
                             <tr>
+                              <td>${formatDateTime(s.submittedAt || s.createdAt, s.date)}</td>
                               <td><strong>${s.title}</strong></td>
                               <td>${s.type}</td>
                               <td>${s.achievementType || '–'}</td>
@@ -675,7 +710,7 @@ export const StudentMetrics = () => {
                             </tr>
                           `;
                         }).join('')}
-                        ${submissions.length === 0 ? '<tr><td colspan="6" style="text-align: center;">No submissions uploaded yet.</td></tr>' : ''}
+                        ${submissions.length === 0 ? '<tr><td colspan="7" style="text-align: center;">No submissions uploaded yet.</td></tr>' : ''}
                       </tbody>
                     </table>
                     <script>window.onload = function() { window.print(); }</script>
@@ -698,6 +733,7 @@ export const StudentMetrics = () => {
               <th className="table-th">Title</th>
               <th className="table-th">Category</th>
               <th className="table-th">Achievement Type</th>
+              <th className="table-th">Submitted Date & Time</th>
               <th className="table-th">Status</th>
               <th className="table-th">Credits</th>
             </tr></thead>
@@ -707,6 +743,7 @@ export const StudentMetrics = () => {
                   <td className="table-td font-medium text-sm">{s.title}</td>
                   <td className="table-td"><Badge variant="blue">{s.type}</Badge></td>
                   <td className="table-td text-xs text-slate-500 dark:text-slate-400">{s.achievementType || '–'}</td>
+                  <td className="table-td text-xs text-slate-400 font-mono">{formatDateTime(s.submittedAt || s.createdAt, s.date)}</td>
                   <td className="table-td"><Badge variant={s.status === 'approved' ? 'green' : s.status === 'rejected' ? 'red' : 'yellow'}>{s.status}</Badge></td>
                   <td className="table-td font-semibold text-primary-600 dark:text-primary-400">{s.credits || (s.suggestedCredits ? `~${s.suggestedCredits}` : '–')}</td>
                 </tr>
@@ -1134,7 +1171,7 @@ export const StudentReviews = () => {
           <table class="table">
             <thead>
               <tr>
-                <th>Date</th>
+                <th>Submitted Date & Time</th>
                 <th>Title</th>
                 <th>Category</th>
                 <th>Status</th>
@@ -1146,7 +1183,7 @@ export const StudentReviews = () => {
               ${reviewedSubmissions.map(s => {
                 const isRejected = s.status === 'rejected';
                 return `<tr>
-                  <td>${s.submittedAt || s.date || '–'}</td>
+                  <td>${formatDateTime(s.submittedAt || s.createdAt, s.date)}</td>
                   <td><strong>${s.title}</strong></td>
                   <td>${s.type || '–'}</td>
                   <td><span class="badge ${isRejected ? 'badge-rejected' : 'badge-approved'}">${isRejected ? 'Rejected' : 'Approved'}</span></td>
@@ -1217,7 +1254,7 @@ export const StudentReviews = () => {
           <table class="table">
             <thead>
               <tr>
-                <th>Date</th>
+                <th>Logged Date & Time</th>
                 <th>Title</th>
                 <th>Description</th>
                 <th>Status</th>
@@ -1229,7 +1266,7 @@ export const StudentReviews = () => {
                 const status = l.reviewStatus || 'pending';
                 const badgeClass = status === 'approved' ? 'badge-approved' : status === 'rejected' ? 'badge-rejected' : 'badge-pending';
                 return `<tr>
-                  <td>${l.date || '–'}</td>
+                  <td>${formatDateTime(l.createdAt || l.submittedAt, l.date)}</td>
                   <td><strong>${l.title}</strong></td>
                   <td>${l.description || '–'}</td>
                   <td><span class="badge ${badgeClass}">${status}</span></td>
@@ -1324,7 +1361,7 @@ export const StudentReviews = () => {
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-mono text-slate-400 dark:text-slate-500">{s.submittedAt || s.date}</span>
+                          <span className="text-xs font-mono text-slate-400 dark:text-slate-500">{formatDateTime(s.submittedAt || s.createdAt, s.date)}</span>
                           <span className="text-slate-300 dark:text-slate-700">•</span>
                           <Badge variant="blue">{s.type}</Badge>
                           <span className="text-slate-300 dark:text-slate-700">•</span>
@@ -1431,7 +1468,7 @@ export const StudentReviews = () => {
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-mono text-slate-400 dark:text-slate-500">{l.date}</span>
+                          <span className="text-xs font-mono text-slate-400 dark:text-slate-500">{formatDateTime(l.createdAt || l.submittedAt, l.date)}</span>
                           <span className="text-slate-300 dark:text-slate-700">•</span>
                           <Badge variant={isApproved ? 'green' : isRejected ? 'red' : 'yellow'}>
                             {isApproved ? 'Approved' : isRejected ? 'Rejected' : 'Pending'}

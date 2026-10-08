@@ -7,6 +7,39 @@ import { Modal, Badge, useToast, EmptyState, Avatar } from '../../../components/
 import { apiGetUsersByMentor, apiUpdateUserStatus, mentorApi } from '../../../utils/api';
 import tunnelConfig from '../../../utils/tunnel.json';
 
+export const formatDateTime = (rawDateTime, rawDate) => {
+  const val = rawDateTime || rawDate;
+  if (!val) return '—';
+  try {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return String(val);
+
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const datePart = `${yyyy}-${mm}-${dd}`;
+
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    const strHours = String(hours).padStart(2, '0');
+    const timePart = `${strHours}:${minutes} ${ampm}`;
+
+    if (typeof val === 'string' && val.length === 10 && val.includes('-') && !rawDateTime) {
+      return val;
+    }
+
+    if (d.getHours() === 0 && d.getMinutes() === 0 && typeof val === 'string' && val.length <= 10) {
+      return datePart;
+    }
+
+    return `${datePart} ${timePart}`;
+  } catch (_) {
+    return String(val);
+  }
+};
+
 // =====================================================================
 // Inline File Viewer (supports Image, PDF, and Google Docs Embedded)
 // =====================================================================
@@ -276,7 +309,7 @@ export const MentorStudents = () => {
                           <table class="table">
                             <thead>
                               <tr>
-                                <th>Date</th>
+                                <th>Submitted Date & Time</th>
                                 <th>Achievement Title</th>
                                 <th>Category</th>
                                 <th>Type</th>
@@ -287,7 +320,7 @@ export const MentorStudents = () => {
                             <tbody>
                               ${studentSubs.map(s => `
                                 <tr>
-                                  <td>${s.date || s.submittedAt || '—'}</td>
+                                  <td>${formatDateTime(s.submittedAt || s.createdAt, s.date)}</td>
                                   <td><strong>${s.title}</strong></td>
                                   <td>${s.type}</td>
                                   <td>${s.achievementType || '—'}</td>
@@ -349,7 +382,7 @@ export const MentorStudents = () => {
                           <table class="table">
                             <thead>
                               <tr>
-                                <th style="width: 120px;">Date</th>
+                                <th style="width: 170px;">Logged Date & Time</th>
                                 <th style="width: 200px;">Task Title</th>
                                 <th>Detailed Description</th>
                                 <th>Resource Links</th>
@@ -358,7 +391,7 @@ export const MentorStudents = () => {
                             <tbody>
                               ${studentLogs.map(l => `
                                 <tr>
-                                  <td>${l.date}</td>
+                                  <td>${formatDateTime(l.createdAt || l.submittedAt, l.date)}</td>
                                   <td><strong>${l.title}</strong></td>
                                   <td>${l.description}</td>
                                   <td>${l.links ? `<a href="${l.links}" target="_blank" style="color: #3b82f6; text-decoration: underline;">${l.links}</a>` : '—'}</td>
@@ -502,7 +535,7 @@ export const MentorSubmissions = () => {
               <th className="table-th">Category</th>
               <th className="table-th">Achievement Type</th>
               <th className="table-th">Student</th>
-              <th className="table-th">Date</th>
+              <th className="table-th">Submitted Date & Time</th>
               <th className="table-th">Documents</th>
               <th className="table-th">Status</th>
               <th className="table-th">Actions</th>
@@ -514,7 +547,7 @@ export const MentorSubmissions = () => {
                   <td className="table-td"><Badge variant="blue">{s.type}</Badge></td>
                   <td className="table-td text-xs text-slate-500 dark:text-slate-400">{s.achievementType || '–'}</td>
                   <td className="table-td">{s.studentName}</td>
-                  <td className="table-td text-slate-400 text-xs">{s.date}</td>
+                  <td className="table-td text-slate-400 text-xs font-mono">{formatDateTime(s.submittedAt || s.createdAt, s.date)}</td>
                   <td className="table-td">
                     {(s.certificateFile || s.presentationFile || s.documentFile) ? (
                       <button
@@ -801,7 +834,7 @@ export const MentorLogs = () => {
             <thead><tr>
               <th className="table-th">Log Title</th>
               <th className="table-th">Student</th>
-              <th className="table-th">Date</th>
+              <th className="table-th">Logged Date & Time</th>
               <th className="table-th">Description</th>
               <th className="table-th">Link</th>
               <th className="table-th">Status</th>
@@ -812,7 +845,7 @@ export const MentorLogs = () => {
                 <tr key={l.id} className="hover:bg-slate-50 dark:hover:bg-dark-700 transition-colors">
                   <td className="table-td font-medium max-w-[180px] truncate">{l.title}</td>
                   <td className="table-td">{l.studentName}</td>
-                  <td className="table-td text-slate-400 text-xs">{l.date}</td>
+                  <td className="table-td text-slate-400 text-xs font-mono">{formatDateTime(l.createdAt || l.submittedAt, l.date)}</td>
                   <td className="table-td text-xs text-slate-500 dark:text-slate-400 max-w-[220px] truncate">{l.description}</td>
                   <td className="table-td">
                     {l.links ? (

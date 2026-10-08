@@ -260,6 +260,8 @@ public class MentorServiceImpl implements MentorService {
                 .description(l.getDescription())
                 .links(l.getReferenceLinks())
                 .date(l.getLogDate().toString())
+                .createdAt(l.getCreatedAt())
+                .submittedAt(l.getCreatedAt())
                 .reviewStatus(l.getReviewStatus() != null ? l.getReviewStatus() : "pending")
                 .review(l.getMentorRemark())
                 .build())

@@ -391,8 +391,30 @@ public class SubmissionServiceImpl implements SubmissionService {
             submission.setCreditPenalty(penalty);
             log.info("Submission {} rejected. Credit penalty applied: {} pts", submissionId, penalty);
         } else {
-            submission.setAwardedCredits(request.getCredits() != null ? request.getCredits() : 0);
+            int awarded = request.getCredits() != null ? request.getCredits() : 0;
+            submission.setAwardedCredits(awarded);
             submission.setCreditPenalty(0);
+
+            if (submission.getSuggestedCredits() == 0 && awarded > 0) {
+                submission.setSuggestedCredits(awarded);
+            }
+
+            // Sync ActivitySubType points in database if subType points is 0 or updated by mentor
+            ActivitySubType subType = null;
+            if (submission.getSubTypeId() != null) {
+                subType = activitySubTypeRepository.findById(submission.getSubTypeId()).orElse(null);
+            }
+            if (subType == null && submission.getCategoryId() != null && submission.getAchievementType() != null) {
+                subType = activitySubTypeRepository.findByCategoryIdAndLabelIgnoreCase(
+                        submission.getCategoryId(), submission.getAchievementType()
+                ).orElse(null);
+            }
+            if (subType != null && awarded > 0 && (subType.getPoints() == 0 || subType.getPoints() != awarded)) {
+                subType.setPoints(awarded);
+                activitySubTypeRepository.save(subType);
+                log.info("Updated ActivitySubType {} ({}) points to {} in database upon mentor approval", 
+                        subType.getId(), subType.getLabel(), awarded);
+            }
         }
         submission.setReviewedAt(LocalDateTime.now());
         

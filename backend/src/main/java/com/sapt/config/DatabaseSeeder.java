@@ -25,10 +25,13 @@ import com.sapt.submission.repository.ActivityCategoryRepository;
 import com.sapt.submission.repository.ActivitySubTypeRepository;
 import com.sapt.collegeadmin.entity.Department;
 import com.sapt.collegeadmin.repository.DepartmentRepository;
+import com.sapt.submission.entity.Submission;
+import com.sapt.submission.repository.SubmissionRepository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * DatabaseSeeder - Seeds default users and migrates legacy auth_users data on startup.
@@ -51,6 +54,7 @@ public class DatabaseSeeder implements CommandLineRunner {
     private final StarThresholdRepository starThresholdRepository;
     private final ActivityCategoryRepository activityCategoryRepository;
     private final ActivitySubTypeRepository activitySubTypeRepository;
+    private final SubmissionRepository submissionRepository;
     private final DataSyncService dataSyncService;
     private final NotificationRepository notificationRepository;
 
@@ -418,6 +422,9 @@ public class DatabaseSeeder implements CommandLineRunner {
         // Step N+2: Seed welcome notifications for new users
         seedWelcomeNotifications();
 
+        // Step N+3: Sync zero-point sub-types and mentor awarded credits
+        syncZeroPointSubTypes();
+
         log.info("DatabaseSeeder complete.");
     }
 
@@ -690,6 +697,47 @@ public class DatabaseSeeder implements CommandLineRunner {
                             .isActive(true)
                             .build()
             );
+        }
+    }
+
+    private void syncZeroPointSubTypes() {
+        try {
+            log.info("DatabaseSeeder: Syncing zero-point activity sub-types and mentor awarded credits...");
+
+            // 1. Explicitly update 'Coursera certification' and 'Infosys springboard' sub-types if points == 0
+            List<ActivitySubType> subTypes = activitySubTypeRepository.findAll();
+            for (ActivitySubType st : subTypes) {
+                if (st.getLabel() != null) {
+                    String lbl = st.getLabel().trim().toLowerCase();
+                    if ((lbl.contains("coursera certification") || lbl.contains("infosys springboard")) && st.getPoints() == 0) {
+                        st.setPoints(10);
+                        activitySubTypeRepository.save(st);
+                        log.info("DatabaseSeeder: Updated points to 10 for sub-type id={}, label='{}'", st.getId(), st.getLabel());
+                    }
+                }
+            }
+
+            // 2. Sync any ActivitySubType whose points == 0 with approved submission awarded credits
+            List<Submission> approvedSubs = submissionRepository.findAll().stream()
+                    .filter(s -> s.getStatus() == com.sapt.common.enums.SubmissionStatus.APPROVED && s.getAwardedCredits() > 0)
+                    .collect(Collectors.toList());
+
+            for (Submission sub : approvedSubs) {
+                ActivitySubType st = null;
+                if (sub.getSubTypeId() != null) {
+                    st = activitySubTypeRepository.findById(sub.getSubTypeId()).orElse(null);
+                }
+                if (st == null && sub.getCategoryId() != null && sub.getAchievementType() != null) {
+                    st = activitySubTypeRepository.findByCategoryIdAndLabelIgnoreCase(sub.getCategoryId(), sub.getAchievementType()).orElse(null);
+                }
+                if (st != null && st.getPoints() == 0) {
+                    st.setPoints(sub.getAwardedCredits());
+                    activitySubTypeRepository.save(st);
+                    log.info("DatabaseSeeder: Synced ActivitySubType id={}, label='{}' points to {}", st.getId(), st.getLabel(), sub.getAwardedCredits());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("DatabaseSeeder: Could not sync zero-point sub-types: {}", e.getMessage());
         }
     }
 

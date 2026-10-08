@@ -85,6 +85,8 @@ public class MentorDto {
         private String description;
         private String links;        // referenceLinks
         private String date;         // logDate formatted as YYYY-MM-DD
+        private java.time.LocalDateTime createdAt;
+        private java.time.LocalDateTime submittedAt;
         private String reviewStatus; // approved | rejected | pending
         private String review;       // mentorRemark
     }
