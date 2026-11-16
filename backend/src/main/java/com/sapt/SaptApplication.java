@@ -14,53 +14,40 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * Do NOT modify this file unless you know what you are doing.
  *
  * Author: SAPT Dev Team
+ *
+ * SECURITY NOTE:
+ *   The static block previously logged ALL .env entries (including
+ *   MONGO_URI, MAIL_PASSWORD, JWT_SECRET, PG_PASSWORD) to stderr
+ *   via System.err.println. That code has been removed.
+ *   Environment variables are NEVER logged — only the count is printed.
  * ============================================================
  */
 @SpringBootApplication
 public class SaptApplication {
 
     static {
-        System.err.println("[DEBUG] STATIC BLOCK OF SaptApplication CALLED");
-        System.err.println("[DEBUG] user.dir = " + System.getProperty("user.dir"));
-        
+        // Load .env into System properties so Spring @Value and ${...} work.
+        // SECURITY: We intentionally do NOT log any key names or values.
         Dotenv dotenv = Dotenv.configure()
-                .directory("./")          // looks for .env in backend/ root
-                .ignoreIfMissing()        // don't crash if .env is absent
+                .directory("./")       // looks for .env in backend/ root
+                .ignoreIfMissing()     // don't crash if .env is absent
                 .load();
 
-        System.err.println("[DEBUG] Dotenv loaded. Number of entries: " + dotenv.entries().size());
         dotenv.entries().forEach(entry -> {
-            System.err.println("[DEBUG] Env entry: " + entry.getKey() + " = " + entry.getValue());
-            if (System.getProperty(entry.getKey()) == null && System.getenv(entry.getKey()) == null) {
+            // Only inject if not already set by the OS environment (OS wins)
+            if (System.getProperty(entry.getKey()) == null
+                    && System.getenv(entry.getKey()) == null) {
                 System.setProperty(entry.getKey(), entry.getValue());
             }
         });
 
-        // Ensure app_reviews table is recreated with clean schema (id, name, email, college, role, rating, feedback, created_at)
-        try {
-            String url = System.getProperty("MYSQL_URL");
-            String user = System.getProperty("MYSQL_USERNAME");
-            String pass = System.getProperty("MYSQL_PASSWORD");
-            if (url != null && user != null && pass != null) {
-                try (java.sql.Connection conn = java.sql.DriverManager.getConnection(url, user, pass);
-                     java.sql.Statement stmt = conn.createStatement()) {
-                    stmt.executeUpdate("DROP TABLE IF EXISTS sapt_app_reviews");
-                    try (java.sql.ResultSet rs = stmt.executeQuery(
-                            "SELECT column_name FROM information_schema.columns WHERE LOWER(table_name) = 'app_reviews' AND LOWER(column_name) IN ('category', 'dept', 'text')")) {
-                        if (rs.next()) {
-                            System.err.println("[INFO] Pre-start cleanup: Dropping legacy app_reviews table to remove legacy columns...");
-                            stmt.executeUpdate("DROP TABLE IF EXISTS app_reviews CASCADE");
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("[WARN] Database pre-start check notice: " + e.getMessage());
-        }
+        // Safe: logs only the count, never keys or values
+        System.out.printf("[SAPT] Dotenv: loaded %d environment entr%s.%n",
+                dotenv.entries().size(),
+                dotenv.entries().size() == 1 ? "y" : "ies");
     }
 
     public static void main(String[] args) {
         SpringApplication.run(SaptApplication.class, args);
     }
-
 }

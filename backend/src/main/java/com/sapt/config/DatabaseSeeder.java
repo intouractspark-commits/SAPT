@@ -10,8 +10,8 @@ import com.sapt.common.enums.UserRole;
 import com.sapt.common.enums.UserStatus;
 import com.sapt.notification.entity.Notification;
 import com.sapt.notification.repository.NotificationRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -42,7 +42,6 @@ import java.util.stream.Collectors;
  *  3. Seeds/updates System Admin and default College Admin.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class DatabaseSeeder implements CommandLineRunner {
 
@@ -57,6 +56,34 @@ public class DatabaseSeeder implements CommandLineRunner {
     private final SubmissionRepository submissionRepository;
     private final DataSyncService dataSyncService;
     private final NotificationRepository notificationRepository;
+
+    /** Admin seed password — read from env, never hardcoded. */
+    @Value("${ADMIN_SEED_PASSWORD:}")
+    private String adminSeedPassword;
+
+    public DatabaseSeeder(UserRepository userRepository,
+                          CollegeRepository collegeRepository,
+                          DepartmentRepository departmentRepository,
+                          PasswordEncoder passwordEncoder,
+                          JdbcTemplate jdbcTemplate,
+                          StarThresholdRepository starThresholdRepository,
+                          ActivityCategoryRepository activityCategoryRepository,
+                          ActivitySubTypeRepository activitySubTypeRepository,
+                          SubmissionRepository submissionRepository,
+                          DataSyncService dataSyncService,
+                          NotificationRepository notificationRepository) {
+        this.userRepository = userRepository;
+        this.collegeRepository = collegeRepository;
+        this.departmentRepository = departmentRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jdbcTemplate = jdbcTemplate;
+        this.starThresholdRepository = starThresholdRepository;
+        this.activityCategoryRepository = activityCategoryRepository;
+        this.activitySubTypeRepository = activitySubTypeRepository;
+        this.submissionRepository = submissionRepository;
+        this.dataSyncService = dataSyncService;
+        this.notificationRepository = notificationRepository;
+    }
 
     @Override
     public void run(String... args) {
@@ -110,28 +137,35 @@ public class DatabaseSeeder implements CommandLineRunner {
 
         // Step 2: Seed/update System Admin
         String adminEmail = "intouract.spark@gmail.com";
-        if (!userRepository.existsByEmail(adminEmail)) {
-            User sysAdmin = User.builder()
-                    .id(UUID.randomUUID().toString())
-                    .role(UserRole.SYSTEM_ADMIN)
-                    .name("System Administrator")
-                    .email(adminEmail)
-                    .passwordHash(passwordEncoder.encode("spark@2403"))
-                    .phone("9000000001")
-                    .position("System Administrator")
-                    .status(UserStatus.APPROVED)
-                    .isActive(true)
-                    .build();
-            userRepository.save(sysAdmin);
-            log.info("System Admin seeded: {}", adminEmail);
+        // SECURITY: Password is read from ADMIN_SEED_PASSWORD env var, never hardcoded.
+        // Set ADMIN_SEED_PASSWORD in your .env file. If unset, seeder skips password update.
+        if (adminSeedPassword == null || adminSeedPassword.isBlank()) {
+            log.warn("DatabaseSeeder: ADMIN_SEED_PASSWORD not set — skipping system admin password seed. " +
+                     "Set this env variable to seed/reset the admin password.");
         } else {
-            userRepository.findByEmail(adminEmail).ifPresent(u -> {
-                u.setPasswordHash(passwordEncoder.encode("spark@2403"));
-                u.setActive(true);
-                u.setStatus(UserStatus.APPROVED);
-                userRepository.save(u);
-                log.info("System Admin updated: {}", adminEmail);
-            });
+            if (!userRepository.existsByEmail(adminEmail)) {
+                User sysAdmin = User.builder()
+                        .id(UUID.randomUUID().toString())
+                        .role(UserRole.SYSTEM_ADMIN)
+                        .name("System Administrator")
+                        .email(adminEmail)
+                        .passwordHash(passwordEncoder.encode(adminSeedPassword))
+                        .phone("9000000001")
+                        .position("System Administrator")
+                        .status(UserStatus.APPROVED)
+                        .isActive(true)
+                        .build();
+                userRepository.save(sysAdmin);
+                log.info("System Admin seeded: {}", adminEmail);
+            } else {
+                userRepository.findByEmail(adminEmail).ifPresent(u -> {
+                    u.setPasswordHash(passwordEncoder.encode(adminSeedPassword));
+                    u.setActive(true);
+                    u.setStatus(UserStatus.APPROVED);
+                    userRepository.save(u);
+                    log.info("System Admin updated: {}", adminEmail);
+                });
+            }
         }
 
         // Step 3: Seed/update default College Admin
