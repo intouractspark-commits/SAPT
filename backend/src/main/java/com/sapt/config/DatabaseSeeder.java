@@ -13,6 +13,7 @@ import com.sapt.notification.repository.NotificationRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -41,6 +42,7 @@ import java.util.stream.Collectors;
  *  2. Drops auth_users table (no longer needed).
  *  3. Seeds/updates System Admin and default College Admin.
  */
+@ConditionalOnProperty(name = "app.seed.enabled", havingValue = "true", matchIfMissing = false)
 @Component
 @Slf4j
 public class DatabaseSeeder implements CommandLineRunner {
@@ -91,17 +93,12 @@ public class DatabaseSeeder implements CommandLineRunner {
 
 
 
-        // Fix for email_verified constraint if it exists
+        // Fix for email_verified constraint if it exists (PostgreSQL)
         try {
             jdbcTemplate.execute("ALTER TABLE users ALTER COLUMN email_verified DROP NOT NULL");
             log.info("DatabaseSeeder: Modified email_verified to be nullable.");
         } catch (Exception e) {
-            try {
-                jdbcTemplate.execute("ALTER TABLE users MODIFY COLUMN email_verified TINYINT(1) NULL");
-                log.info("DatabaseSeeder: Modified email_verified to be nullable.");
-            } catch (Exception ex) {
-                log.debug("DatabaseSeeder: email_verified column skipped or not present: {}", ex.getMessage());
-            }
+            log.debug("DatabaseSeeder: email_verified column skipped or not present: {}", e.getMessage());
         }
 
         // Cleanup: clear admin_id from database table users if present
@@ -447,7 +444,7 @@ public class DatabaseSeeder implements CommandLineRunner {
             log.info("DatabaseSeeder: Default activity categories and sub-types seeded.");
         }
 
-        // Step N: Ensure role-mirror tables have correct utf8mb4 charset for UUID columns
+        // Step N: Ensure role-mirror tables exist with correct schema
         fixRoleTableCharsets();
 
         // Step N+1: Sync approved users → hods / mentors / students tables
@@ -504,23 +501,12 @@ public class DatabaseSeeder implements CommandLineRunner {
     }
 
     /**
-     * Ensures the hods, mentors, and students tables have the correct column
-     * charset (utf8mb4) so that UUID string values can be inserted.
-     * Uses ALTER TABLE ... CONVERT TO CHARACTER SET to fix existing tables
-     * created with wrong charset by Hibernate DDL.
+     * Ensures the hods, mentors, and students role-mirror tables exist with the correct schema.
+     * Uses CREATE TABLE IF NOT EXISTS — safe to run on every startup without destroying data.
+     * Tables are normally created by Hibernate DDL; this is a fallback safety net.
      */
     private void fixRoleTableCharsets() {
         log.info("DatabaseSeeder: Ensuring role-tables (hods, mentors, students) exist...");
-
-        // First, drop any legacy role tables if needed (idempotent)
-        for (String table : List.of("hods", "mentors", "students")) {
-            try {
-                jdbcTemplate.execute("DROP TABLE IF EXISTS " + table + " CASCADE");
-                log.info("DatabaseSeeder: Dropped existing {} table for recreation.", table);
-            } catch (Exception e) {
-                log.debug("DatabaseSeeder: Could not drop {}: {}", table, e.getMessage());
-            }
-        }
 
         // Recreate with standard SQL schema
         try {
@@ -695,19 +681,11 @@ public class DatabaseSeeder implements CommandLineRunner {
         try {
             try {
                 jdbcTemplate.execute("SET session_replication_role = 'replica'");
-            } catch (Exception ignored) {
-                try {
-                    jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 0");
-                } catch (Exception ignored2) {}
-            }
+            } catch (Exception ignored) {}
             jdbcTemplate.execute("DROP TABLE IF EXISTS auth_users CASCADE");
             try {
                 jdbcTemplate.execute("SET session_replication_role = 'origin'");
-            } catch (Exception ignored) {
-                try {
-                    jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 1");
-                } catch (Exception ignored2) {}
-            }
+            } catch (Exception ignored) {}
             log.info("auth_users table dropped successfully.");
         } catch (Exception e) {
             log.warn("Could not drop auth_users table: {}", e.getMessage());

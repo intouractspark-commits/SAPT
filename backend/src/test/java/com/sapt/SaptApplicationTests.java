@@ -66,16 +66,16 @@ class SaptApplicationTests {
                 "auth_users", "system_admins", "users"
             };
 
-            stmt.execute("SET FOREIGN_KEY_CHECKS = 0");
+            stmt.execute("SET session_replication_role = 'replica'"); // PostgreSQL: disable FK checks
             for (String table : tables) {
                 try {
-                    stmt.execute("DROP TABLE IF EXISTS " + table);
+                    stmt.execute("DROP TABLE IF EXISTS " + table + " CASCADE");
                     System.out.println("Dropped table: " + table);
                 } catch (Exception e) {
                     System.out.println("Failed to drop table " + table + ": " + e.getMessage());
                 }
             }
-            stmt.execute("SET FOREIGN_KEY_CHECKS = 1");
+            stmt.execute("SET session_replication_role = 'origin'"); // PostgreSQL: re-enable FK checks
             System.out.println("=====================================");
 
         } catch (Exception e) {

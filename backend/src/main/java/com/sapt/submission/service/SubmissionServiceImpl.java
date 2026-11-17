@@ -34,7 +34,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import jakarta.annotation.PostConstruct;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 
 @Slf4j
 @Service
@@ -51,28 +52,39 @@ public class SubmissionServiceImpl implements SubmissionService {
     private final StarThresholdRepository starThresholdRepository;
     private final MongoSubmissionFileRepository mongoSubmissionFileRepository;
 
+    @EventListener(ApplicationReadyEvent.class)
+    public void onApplicationReady(ApplicationReadyEvent event) {
+        try {
+            recalculateAllSnapshotsOnStartup();
+        } catch (Exception e) {
+            log.error("[Startup] Credit snapshot recalculation failed — application will continue: {}", e.getMessage());
+        }
+    }
+
     /**
      * On startup: recalculate every student's credit snapshot so that
      * any penalty changes (e.g., the new 10% rejection deduction) are
      * immediately reflected in the dashboard without manual intervention.
      */
-    @PostConstruct
-    @Transactional
     public void recalculateAllSnapshotsOnStartup() {
-        log.info("[Startup] Recalculating credit snapshots for all students...");
-        List<String> studentIds = submissionRepository.findAll()
-                .stream()
-                .map(Submission::getStudentId)
-                .distinct()
-                .collect(Collectors.toList());
-        for (String studentId : studentIds) {
-            try {
-                recalculateCreditSnapshot(studentId);
-            } catch (Exception e) {
-                log.error("[Startup] Failed to recalculate snapshot for student {}: {}", studentId, e.getMessage());
+        try {
+            log.info("[Startup] Recalculating credit snapshots for all students...");
+            List<String> studentIds = submissionRepository.findAll()
+                    .stream()
+                    .map(Submission::getStudentId)
+                    .distinct()
+                    .collect(Collectors.toList());
+            for (String studentId : studentIds) {
+                try {
+                    recalculateCreditSnapshot(studentId);
+                } catch (Exception e) {
+                    log.error("[Startup] Failed to recalculate snapshot for student {}: {}", studentId, e.getMessage());
+                }
             }
+            log.info("[Startup] Recalculated snapshots for {} students.", studentIds.size());
+        } catch (Exception e) {
+            log.warn("[Startup] Could not recalculate credit snapshots: {}. Snapshots will be recalculated on next activity.", e.getMessage());
         }
-        log.info("[Startup] Recalculated snapshots for {} students.", studentIds.size());
     }
 
     @Override

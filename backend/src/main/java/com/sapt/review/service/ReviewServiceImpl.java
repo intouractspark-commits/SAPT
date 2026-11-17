@@ -3,9 +3,10 @@ package com.sapt.review.service;
 import com.sapt.review.dto.ReviewDto;
 import com.sapt.review.entity.Review;
 import com.sapt.review.repository.ReviewRepository;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,7 +21,15 @@ public class ReviewServiceImpl implements ReviewService {
 
     private final ReviewRepository reviewRepository;
 
-    @PostConstruct
+    @EventListener(ApplicationReadyEvent.class)
+    public void onApplicationReady(ApplicationReadyEvent event) {
+        try {
+            initSeedData();
+        } catch (Exception e) {
+            log.error("[Startup] Review seed failed — application will continue: {}", e.getMessage());
+        }
+    }
+
     public void initSeedData() {
         if (reviewRepository.count() == 0) {
             log.info("Seeding initial app reviews into database...");

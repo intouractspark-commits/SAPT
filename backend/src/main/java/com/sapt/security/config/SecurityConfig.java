@@ -72,6 +72,8 @@ public class SecurityConfig {
                 // ---- Public Auth Endpoints ----
                 // NOTE: context-path is /api, so Spring Security sees paths WITHOUT /api prefix
                 .requestMatchers(
+                    "/",
+                    "/health",
                     "/auth/login",
                     "/auth/register",
                     "/auth/otp/send",

@@ -22,8 +22,8 @@ import java.util.List;
  * The `hods`, `mentors`, and `students` tables are mirror tables
  * that reflect approved users from the unified `users` table.
  *
- * Safe to call multiple times — uses INSERT IGNORE / ON DUPLICATE
- * KEY UPDATE for idempotent upserts.
+ * Safe to call multiple times — uses ON CONFLICT (id) DO UPDATE SET
+ * for idempotent upserts.
  * ============================================================
  */
 @Slf4j
@@ -106,12 +106,12 @@ public class DataSyncService {
         String sql = """
             INSERT INTO hods (id, name, email, college_id, department_id, status)
             VALUES (?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-                name          = VALUES(name),
-                email         = VALUES(email),
-                college_id    = VALUES(college_id),
-                department_id = VALUES(department_id),
-                status        = VALUES(status)
+            ON CONFLICT (id) DO UPDATE SET
+                name          = EXCLUDED.name,
+                email         = EXCLUDED.email,
+                college_id    = EXCLUDED.college_id,
+                department_id = EXCLUDED.department_id,
+                status        = EXCLUDED.status
             """;
         jdbcTemplate.update(sql,
                 user.getId(),
@@ -127,12 +127,12 @@ public class DataSyncService {
         String sql = """
             INSERT INTO mentors (id, name, email, college_id, department_id, status)
             VALUES (?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-                name          = VALUES(name),
-                email         = VALUES(email),
-                college_id    = VALUES(college_id),
-                department_id = VALUES(department_id),
-                status        = VALUES(status)
+            ON CONFLICT (id) DO UPDATE SET
+                name          = EXCLUDED.name,
+                email         = EXCLUDED.email,
+                college_id    = EXCLUDED.college_id,
+                department_id = EXCLUDED.department_id,
+                status        = EXCLUDED.status
             """;
         jdbcTemplate.update(sql,
                 user.getId(),
@@ -148,14 +148,14 @@ public class DataSyncService {
         String sql = """
             INSERT INTO students (id, name, email, college_id, department_id, roll_no, mentor_id, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-                name          = VALUES(name),
-                email         = VALUES(email),
-                college_id    = VALUES(college_id),
-                department_id = VALUES(department_id),
-                roll_no       = VALUES(roll_no),
-                mentor_id     = VALUES(mentor_id),
-                status        = VALUES(status)
+            ON CONFLICT (id) DO UPDATE SET
+                name          = EXCLUDED.name,
+                email         = EXCLUDED.email,
+                college_id    = EXCLUDED.college_id,
+                department_id = EXCLUDED.department_id,
+                roll_no       = EXCLUDED.roll_no,
+                mentor_id     = EXCLUDED.mentor_id,
+                status        = EXCLUDED.status
             """;
         jdbcTemplate.update(sql,
                 user.getId(),
