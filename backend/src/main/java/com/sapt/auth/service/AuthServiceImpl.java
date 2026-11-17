@@ -4,7 +4,9 @@ import com.sapt.auth.dto.AuthDtos;
 import com.sapt.auth.dto.LoginRequest;
 import com.sapt.auth.dto.LoginResponse;
 import com.sapt.auth.dto.RegisterRequest;
+import com.sapt.auth.entity.PendingRegistration;
 import com.sapt.auth.entity.User;
+import com.sapt.auth.repository.PendingRegistrationRepository;
 import com.sapt.auth.repository.UserRepository;
 import com.sapt.common.enums.UserStatus;
 import com.sapt.common.exception.SaptException;
@@ -28,7 +30,7 @@ import java.util.Optional;
 
 /**
  * ============================================================
- * AuthServiceImpl — Authentication Service Implementation
+ * AuthServiceImpl â€” Authentication Service Implementation
  * ============================================================
  * Implements all authentication operations against the
  * unified `users` table (no separate auth_users or otp_tokens).
@@ -39,9 +41,9 @@ import java.util.Optional;
  *   A null otp_code signals "email verified".
  *
  * Login gate (all three must pass):
- *   1. Password correct        → Spring Security authentication
- *   2. otpCode == null         → email was verified
- *   3. status == APPROVED      → approved by supervisor / admin
+ *   1. Password correct        â†’ Spring Security authentication
+ *   2. otpCode == null         â†’ email was verified
+ *   3. status == APPROVED      â†’ approved by supervisor / admin
  *
  * OTP validity : 10 minutes
  * OTP length   : 6 digits
@@ -57,11 +59,12 @@ public class AuthServiceImpl implements AuthService {
     private static final String PURPOSE_EMAIL      = "EMAIL_VERIFICATION";
     private static final String PURPOSE_RESET      = "PASSWORD_RESET";
 
-    private final UserRepository        userRepository;
-    private final JwtUtil               jwtUtil;
-    private final PasswordEncoder       passwordEncoder;
-    private final AuthenticationManager authenticationManager;
-    private final NotificationService   notificationService;
+    private final UserRepository                userRepository;
+    private final PendingRegistrationRepository pendingRegistrationRepository;
+    private final JwtUtil                       jwtUtil;
+    private final PasswordEncoder               passwordEncoder;
+    private final AuthenticationManager         authenticationManager;
+    private final NotificationService           notificationService;
     private final com.sapt.collegeadmin.repository.CollegeRepository collegeRepository;
     private final com.sapt.collegeadmin.repository.DepartmentRepository departmentRepository;
     private final com.sapt.config.DataSyncService dataSyncService;
@@ -93,7 +96,7 @@ public class AuthServiceImpl implements AuthService {
 
         // 3. Role must match what the login page selected
         if (!user.getRole().equals(request.getRole())) {
-            log.warn("Role mismatch for {} — requested: {}, actual: {}",
+            log.warn("Role mismatch for {} â€” requested: {}, actual: {}",
                     email, request.getRole(), user.getRole());
             throw SaptException.unauthorized("Your role does not match the selected login portal");
         }
@@ -128,22 +131,22 @@ public class AuthServiceImpl implements AuthService {
                 .token(token)
                 .tokenType("Bearer")
                 .expiresIn(jwtUtil.getExpirationMs())
-                // ─── Core Identity ────────────────────────────
+                // â”€â”€â”€ Core Identity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 .id(user.getId())
                 .name(user.getName())
                 .email(user.getEmail())
                 .role(user.getRole())
                 .status(user.getStatus())
-                // ─── Profile ──────────────────────────────────
+                // â”€â”€â”€ Profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 .college(user.getCollegeName())       // user.college in frontend
                 .department(user.getDepartmentName()) // user.department in frontend
                 .phone(user.getPhone())
                 .avatarUrl(user.getAvatarUrl())
                 .position(user.getPosition())
-                // ─── UUID References ──────────────────────────
+                // â”€â”€â”€ UUID References â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 .collegeId(user.getCollegeId())
                 .departmentId(user.getDepartmentId())
-                // ─── Role-Specific (null when not applicable) ─
+                // â”€â”€â”€ Role-Specific (null when not applicable) â”€
                 .mentorId(user.getMentorId())
                 .mentorName(user.getMentorName())
                 .hodId(user.getHodId())
@@ -163,11 +166,11 @@ public class AuthServiceImpl implements AuthService {
         String email = request.getEmail().trim().toLowerCase();
         log.info("Registration attempt: {} (role={})", email, request.getRole());
 
-        // 1. Duplicate email check
-        if (userRepository.existsByEmail(email)) {
-            log.warn("Registration failed — email already exists: {}", email);
+        // 1. Block if a fully-verified account already exists in users table
+        userRepository.findByEmail(email).ifPresent(existing -> {
+            log.warn("Registration failed - email already exists and is verified: {}", email);
             throw SaptException.conflict("An account with this email already exists");
-        }
+        });
 
         // 2. Look up and populate database reference fields
         String collegeId = null;
@@ -187,7 +190,7 @@ public class AuthServiceImpl implements AuthService {
                     .filter(d -> d.getName().equalsIgnoreCase(request.getDepartment().trim()))
                     .findFirst()
                     .orElse(null);
-            
+
             // Auto-create department if "Other" custom option was used
             if (dept == null) {
                 dept = com.sapt.collegeadmin.entity.Department.builder()
@@ -203,12 +206,15 @@ public class AuthServiceImpl implements AuthService {
 
         String mentorId = null;
         String mentorName = null;
-        if (com.sapt.common.enums.UserRole.STUDENT.equals(request.getRole()) && request.getMentorName() != null && !request.getMentorName().isBlank()) {
+        if (com.sapt.common.enums.UserRole.STUDENT.equals(request.getRole())) {
+            if (request.getMentorName() == null || request.getMentorName().isBlank()) {
+                throw SaptException.badRequest("Please select a registered mentor to complete registration");
+            }
             List<User> mentors = userRepository.findByRole(com.sapt.common.enums.UserRole.MENTOR);
             final String targetCollegeId = collegeId;
             User mentor = mentors.stream()
-                    .filter(m -> m.getName().equalsIgnoreCase(request.getMentorName().trim()) 
-                            && m.getCollegeId() != null 
+                    .filter(m -> m.getName().equalsIgnoreCase(request.getMentorName().trim())
+                            && m.getCollegeId() != null
                             && m.getCollegeId().equals(targetCollegeId))
                     .findFirst()
                     .orElse(null);
@@ -216,45 +222,41 @@ public class AuthServiceImpl implements AuthService {
                 mentorId = mentor.getId();
                 mentorName = mentor.getName();
             } else {
-                mentorName = request.getMentorName().trim();
+                throw SaptException.badRequest("Selected mentor was not found or is not registered with your college");
             }
         }
 
-        // 3. Generate OTP before saving (so we can send it immediately after)
+        // 3. Generate OTP
         String otp = CommonUtils.generateOtp(OTP_LENGTH);
 
-        // 4. Create the User record in the unified users table
-        //
-        // NOTE: idCardUrl from the frontend is a base64-encoded image which can be
-        // 5–10 MB. TiDB Cloud enforces a hard 6 MB max row size, so storing raw base64
-        // would crash the INSERT. We store only a small flag ("uploaded") to indicate
-        // the card was provided — the actual file is not persisted server-side.
+        // 4. Store only a small flag for the ID card (base64 can be 5-10 MB)
         String idCardFlag = (request.getIdCardUrl() != null && !request.getIdCardUrl().isBlank())
                 ? "uploaded"
                 : null;
 
-        User newUser = User.builder()
-                .name(request.getFullName())
-                .email(email)
-                .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .role(request.getRole())
-                .status(UserStatus.PENDING)     // awaiting email verify + supervisor approval
-                .isActive(true)
-                .otpCode(otp)
-                .otpExpiresAt(LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES))
-                .collegeId(collegeId)
-                .collegeName(collegeName)
-                .departmentId(departmentId)
-                .departmentName(departmentName)
-                .mentorId(mentorId)
-                .mentorName(mentorName)
-                .idCardUrl(idCardFlag)
-                .build();
+        // 5. Save to pending_registrations (NOT to users table yet).
+        //    If a pending record already exists for this email (re-registration without
+        //    verifying the first OTP), update it in place so the unique constraint holds.
+        PendingRegistration pending = pendingRegistrationRepository.findByEmail(email)
+                .orElse(PendingRegistration.builder().email(email).build());
 
-        userRepository.save(newUser);
-        log.info("User registered: {} (role={})", email, request.getRole());
+        pending.setName(request.getFullName());
+        pending.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        pending.setRole(request.getRole());
+        pending.setCollegeId(collegeId);
+        pending.setCollegeName(collegeName);
+        pending.setDepartmentId(departmentId);
+        pending.setDepartmentName(departmentName);
+        pending.setMentorId(mentorId);
+        pending.setMentorName(mentorName);
+        pending.setIdCardUrl(idCardFlag);
+        pending.setOtpCode(otp);
+        pending.setOtpExpiresAt(LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES));
 
-        // 5. Send OTP email asynchronously
+        pendingRegistrationRepository.save(pending);
+        log.info("Pending registration saved for: {} (role={}). Awaiting email verification.", email, request.getRole());
+
+        // 6. Send OTP email asynchronously
         notificationService.sendEmailVerificationOtp(email, request.getFullName(), otp);
     }
 
@@ -273,19 +275,29 @@ public class AuthServiceImpl implements AuthService {
             throw SaptException.badRequest("Invalid OTP purpose. Use EMAIL_VERIFICATION or PASSWORD_RESET");
         }
 
-        // User must exist for both purposes
+        if (PURPOSE_EMAIL.equals(purpose)) {
+            // For email verification resend: look in pending_registrations first
+            Optional<PendingRegistration> pendingOpt = pendingRegistrationRepository.findByEmail(email);
+            if (pendingOpt.isPresent()) {
+                PendingRegistration pending = pendingOpt.get();
+                String otp = CommonUtils.generateOtp(OTP_LENGTH);
+                pending.setOtpCode(otp);
+                pending.setOtpExpiresAt(LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES));
+                pendingRegistrationRepository.save(pending);
+                notificationService.sendEmailVerificationOtp(email, pending.getName(), otp);
+                log.info("Resent email verification OTP to pending registration: {}", email);
+                return;
+            }
+            // Fall through: no pending record means account is already verified
+            throw SaptException.notFound("No pending registration found for this email. Please register first.");
+        }
+
+        // For password reset: user must exist in users table
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> SaptException.notFound("No account found with this email"));
 
-        // Generate and persist the new OTP
         String otp = refreshOtp(user);
-
-        if (PURPOSE_EMAIL.equals(purpose)) {
-            notificationService.sendEmailVerificationOtp(email, user.getName(), otp);
-        } else {
-            notificationService.sendPasswordResetOtp(email, otp);
-        }
-
+        notificationService.sendPasswordResetOtp(email, otp);
         log.info("OTP sent to {} for purpose: {}", email, purpose);
     }
 
@@ -296,25 +308,64 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void verifyOtp(AuthDtos.OtpVerifyRequest request) {
-        String email = request.getEmail().trim().toLowerCase();
-        String otp   = request.getOtp().trim();
-        log.info("OTP verification for: {}", email);
+        String email   = request.getEmail().trim().toLowerCase();
+        String otp     = request.getOtp().trim();
+        String purpose = request.getPurpose() != null ? request.getPurpose().trim().toUpperCase() : PURPOSE_EMAIL;
+        log.info("OTP verification for: {}, purpose: {}", email, purpose);
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> SaptException.notFound("User not found"));
+        if (PURPOSE_EMAIL.equals(purpose)) {
+            // Look in pending_registrations table
+            PendingRegistration pending = pendingRegistrationRepository.findByEmail(email)
+                    .orElseThrow(() -> SaptException.notFound("No pending registration found. Please register first."));
 
-        // Validate OTP
-        validateOtp(user, otp);
+            // Validate OTP
+            if (pending.getOtpCode() == null) {
+                throw SaptException.badRequest("No OTP found. Please request a new one.");
+            }
+            if (!pending.getOtpCode().equals(otp)) {
+                log.warn("Wrong OTP entered for pending registration: {}", email);
+                throw SaptException.badRequest("Invalid OTP. Please check and try again.");
+            }
+            if (LocalDateTime.now().isAfter(pending.getOtpExpiresAt())) {
+                log.warn("Expired OTP used for pending registration: {}", email);
+                throw SaptException.badRequest("OTP has expired. Please request a new one.");
+            }
 
-        // Clear OTP — this marks the email as verified
-        user.setOtpCode(null);
-        user.setOtpExpiresAt(null);
-        userRepository.save(user);
+            // OTP is valid - now move from pending_registrations to users table
+            User newUser = User.builder()
+                    .name(pending.getName())
+                    .email(pending.getEmail())
+                    .passwordHash(pending.getPasswordHash())
+                    .role(pending.getRole())
+                    .status(UserStatus.PENDING)
+                    .isActive(true)
+                    .otpCode(null)          // null = email verified
+                    .otpExpiresAt(null)
+                    .collegeId(pending.getCollegeId())
+                    .collegeName(pending.getCollegeName())
+                    .departmentId(pending.getDepartmentId())
+                    .departmentName(pending.getDepartmentName())
+                    .mentorId(pending.getMentorId())
+                    .mentorName(pending.getMentorName())
+                    .idCardUrl(pending.getIdCardUrl())
+                    .build();
 
-        log.info("OTP verified and email confirmed for: {}", email);
+            userRepository.save(newUser);
+            pendingRegistrationRepository.deleteByEmail(email);
+            log.info("Email verified - user moved from pending to users table: {} (role={})", email, pending.getRole());
+
+        } else {
+            // PASSWORD_RESET: user is in users table
+            User user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> SaptException.notFound("User not found"));
+            validateOtp(user, otp);
+            user.setOtpCode(null);
+            user.setOtpExpiresAt(null);
+            userRepository.save(user);
+            log.info("OTP verified for password reset: {}", email);
+        }
     }
 
-    // ============================================================
     // RESET PASSWORD
     // ============================================================
 
@@ -346,10 +397,10 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void logout(String token) {
-        // JWT is stateless — client must delete the token.
+        // JWT is stateless â€” client must delete the token.
         // For token blacklisting (e.g., Redis), add the token here.
         // Session rows in the `sessions` table can be revoked here if needed.
-        log.info("Logout called — client must discard the JWT.");
+        log.info("Logout called â€” client must discard the JWT.");
     }
 
     // ============================================================
@@ -427,13 +478,17 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(readOnly = true)
     public java.util.List<com.sapt.auth.entity.User> getUsersByCollegeAndRole(String collegeName, com.sapt.common.enums.UserRole role) {
-        return userRepository.findByCollegeNameAndRole(collegeName.trim(), role);
+        return userRepository.findByCollegeNameAndRole(collegeName.trim(), role).stream()
+                .filter(u -> u.getOtpCode() == null) // Only show email-verified accounts
+                .collect(java.util.stream.Collectors.toList());
     }
 
     @Override
     @Transactional(readOnly = true)
     public java.util.List<com.sapt.auth.entity.User> getUsersByMentorId(String mentorId) {
-        return userRepository.findByMentorId(mentorId);
+        return userRepository.findByMentorId(mentorId).stream()
+                .filter(u -> u.getOtpCode() == null) // Only show email-verified accounts
+                .collect(java.util.stream.Collectors.toList());
     }
 
     @Override

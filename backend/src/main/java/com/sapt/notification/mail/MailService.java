@@ -1,27 +1,22 @@
 package com.sapt.notification.mail;
 
+import com.sapt.notification.gmail.GmailEmailService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
-
 /**
  * ============================================================
- * MailService - SMTP Email Sender
+ * MailService - Email Dispatch Service (Gmail REST API Backend)
  * ============================================================
- * Handles all outgoing email communication in SAPT.
+ * Legacy SMTP and Resend have been completely replaced.
+ * All outgoing emails are routed via official Google Gmail API
+ * through GmailEmailService.
  *
- * Responsibilities:
- *  - Send plain text emails
- *  - Send HTML template emails
- *  - Used by: OtpMailService, NotificationService
+ * This class preserves method signatures (sendHtmlMail, sendPlainMail)
+ * so existing callers (NotificationService, SystemAdminServiceImpl, etc.)
+ * require zero breaking changes.
  * ============================================================
  */
 @Slf4j
@@ -29,13 +24,10 @@ import jakarta.mail.internet.MimeMessage;
 @RequiredArgsConstructor
 public class MailService {
 
-    private final JavaMailSender mailSender;
-
-    @Value("${spring.mail.username}")
-    private String fromAddress;
+    private final GmailEmailService gmailEmailService;
 
     /**
-     * Sends an HTML email asynchronously.
+     * Sends an HTML email asynchronously via Gmail REST API.
      *
      * @param to       Recipient email address
      * @param subject  Email subject line
@@ -44,22 +36,15 @@ public class MailService {
     @Async
     public void sendHtmlMail(String to, String subject, String htmlBody) {
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(fromAddress);
-            helper.setTo(to);
-            helper.setSubject(subject);
-            helper.setText(htmlBody, true);
-            mailSender.send(message);
-            log.info("HTML email sent to: {}", to);
-        } catch (MessagingException e) {
-            log.error("Failed to send HTML email to {}: {}", to, e.getMessage());
-            throw new RuntimeException("Failed to send email: " + e.getMessage(), e);
+            gmailEmailService.sendHtmlEmail(to, subject, htmlBody, "TRANSACTIONAL");
+        } catch (Exception e) {
+            log.error("❌ Gmail API email failed in MailService for {}: {}", to, e.getMessage());
         }
     }
 
     /**
-     * Sends a plain text email asynchronously.
+     * Sends a plain text email asynchronously via Gmail REST API.
+     * Converts plain text into HTML paragraph for delivery.
      *
      * @param to      Recipient email address
      * @param subject Email subject line
@@ -68,16 +53,12 @@ public class MailService {
     @Async
     public void sendPlainMail(String to, String subject, String text) {
         try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromAddress);
-            message.setTo(to);
-            message.setSubject(subject);
-            message.setText(text);
-            mailSender.send(message);
-            log.info("Plain email sent to: {}", to);
+            String htmlBody = "<div style=\"font-family:sans-serif;font-size:14px;color:#333;line-height:1.5;\">"
+                    + (text != null ? text.replace("\n", "<br/>") : "")
+                    + "</div>";
+            gmailEmailService.sendHtmlEmail(to, subject, htmlBody, "PLAIN_TEXT");
         } catch (Exception e) {
-            log.error("Failed to send plain email to {}: {}", to, e.getMessage());
-            throw new RuntimeException("Failed to send email: " + e.getMessage(), e);
+            log.error("❌ Gmail API email failed in MailService (plain) for {}: {}", to, e.getMessage());
         }
     }
 }

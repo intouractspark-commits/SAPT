@@ -4,6 +4,7 @@ import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,6 +27,7 @@ import java.util.concurrent.TimeUnit;
  *  - System event logs
  * ============================================================
  */
+@Slf4j
 @Configuration
 public class MongoConfig extends AbstractMongoClientConfiguration {
 
@@ -43,17 +45,27 @@ public class MongoConfig extends AbstractMongoClientConfiguration {
     @Override
     @Bean
     public MongoClient mongoClient() {
-        MongoClientSettings settings = MongoClientSettings.builder()
-                .applyConnectionString(new ConnectionString(mongoUri))
-                // Fail fast: 5 seconds to find an available server
-                .applyToClusterSettings(cluster ->
-                        cluster.serverSelectionTimeout(5000, TimeUnit.MILLISECONDS))
-                // 5 second connect timeout per socket
-                .applyToSocketSettings(socket ->
-                        socket.connectTimeout(5000, TimeUnit.MILLISECONDS)
-                              .readTimeout(10000, TimeUnit.MILLISECONDS))
-                .retryWrites(true)
-                .build();
-        return MongoClients.create(settings);
+        try {
+            MongoClientSettings settings = MongoClientSettings.builder()
+                    .applyConnectionString(new ConnectionString(mongoUri))
+                    // Fail fast: 5 seconds to find an available server
+                    .applyToClusterSettings(cluster ->
+                            cluster.serverSelectionTimeout(5000, TimeUnit.MILLISECONDS))
+                    // 5 second connect timeout per socket
+                    .applyToSocketSettings(socket ->
+                            socket.connectTimeout(5000, TimeUnit.MILLISECONDS)
+                                  .readTimeout(10000, TimeUnit.MILLISECONDS))
+                    .retryWrites(true)
+                    .build();
+            return MongoClients.create(settings);
+        } catch (Exception e) {
+            log.warn("MongoDB connection failed to initialize ({}) - using fallback so PostgreSQL/Auth continues: {}",
+                    mongoUri, e.getMessage());
+            MongoClientSettings fallback = MongoClientSettings.builder()
+                    .applyConnectionString(new ConnectionString("mongodb://localhost:27017"))
+                    .applyToClusterSettings(cluster -> cluster.serverSelectionTimeout(100, TimeUnit.MILLISECONDS))
+                    .build();
+            return MongoClients.create(fallback);
+        }
     }
 }

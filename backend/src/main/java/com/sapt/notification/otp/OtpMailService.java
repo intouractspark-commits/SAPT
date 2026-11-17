@@ -1,7 +1,6 @@
 package com.sapt.notification.otp;
 
-import com.sapt.notification.mail.MailService;
-import com.sapt.notification.templates.MailTemplates;
+import com.sapt.notification.gmail.GmailEmailService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -9,14 +8,13 @@ import org.springframework.stereotype.Service;
 
 /**
  * ============================================================
- * OtpMailService - OTP Email Notification Service
+ * OtpMailService - OTP Email Notification Service (Gmail API)
  * ============================================================
  * Responsible for sending OTP emails for:
  *  - Email verification (during registration)
  *  - Password reset (forgot password flow)
  *
- * Methods are @Async — they run in a background thread so
- * that the API response is not delayed by mail sending.
+ * Dispatches via Google Gmail REST API (GmailEmailService).
  * ============================================================
  */
 @Slf4j
@@ -24,7 +22,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class OtpMailService {
 
-    private final MailService mailService;
+    private final GmailEmailService gmailEmailService;
 
     /**
      * Sends an OTP email for email address verification.
@@ -37,10 +35,7 @@ public class OtpMailService {
     @Async
     public void sendEmailVerificationOtp(String toEmail, String fullName, String otp) {
         try {
-            String subject  = "SAPT - Verify Your Email Address";
-            String htmlBody = MailTemplates.buildOtpEmail(otp, "Email Verification", fullName);
-            mailService.sendHtmlMail(toEmail, subject, htmlBody);
-            log.info("Email verification OTP sent to: {}", toEmail);
+            gmailEmailService.sendVerificationEmail(toEmail, fullName, otp);
         } catch (Exception e) {
             log.error("Failed to send email verification OTP to {}: {}", toEmail, e.getMessage());
         }
@@ -56,10 +51,7 @@ public class OtpMailService {
     @Async
     public void sendPasswordResetOtp(String toEmail, String otp) {
         try {
-            String subject  = "SAPT - Password Reset OTP";
-            String htmlBody = MailTemplates.buildOtpEmail(otp, "Password Reset", null);
-            mailService.sendHtmlMail(toEmail, subject, htmlBody);
-            log.info("Password reset OTP sent to: {}", toEmail);
+            gmailEmailService.sendPasswordResetEmail(toEmail, otp);
         } catch (Exception e) {
             log.error("Failed to send password reset OTP to {}: {}", toEmail, e.getMessage());
         }

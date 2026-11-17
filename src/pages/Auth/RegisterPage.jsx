@@ -11,6 +11,7 @@ const RegisterPage = () => {
   const [colleges, setColleges] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [mentors, setMentors] = useState([]);
+  const [mentorsLoading, setMentorsLoading] = useState(false);
   
   const [otpSent, setOtpSent] = useState(false);
   const [otpInput, setOtpInput] = useState('');
@@ -19,7 +20,7 @@ const RegisterPage = () => {
   const [customDept, setCustomDept] = useState('');
   const [form, setForm] = useState({
     college: '', department: '', role: '',
-    email: '', name: '', mentorName: '',
+    email: '', name: '', mentorName: '', mentorId: '',
     password: '', confirmPassword: '',
     idCardFile: null,
     idCardFileName: '',
@@ -69,18 +70,30 @@ const RegisterPage = () => {
 
   // Fetch mentors when college or department changes (for Student role)
   useEffect(() => {
-    if (!form.college || !form.department || form.role !== ROLES.STUDENT) {
+    const deptToFetch = form.department === 'Other' ? customDept.trim() : form.department;
+    if (!form.college || !deptToFetch || form.role !== ROLES.STUDENT) {
       setMentors([]);
+      setForm(f => ({ ...f, mentorName: '', mentorId: '' }));
       return;
     }
     let active = true;
+    setMentorsLoading(true);
+    setForm(f => ({ ...f, mentorName: '', mentorId: '' }));
     const loadMentors = async () => {
-      const list = await apiGetMentors(form.college, form.department);
-      if (active) setMentors(list);
+      try {
+        const list = await apiGetMentors(form.college, deptToFetch);
+        if (active) {
+          setMentors(Array.isArray(list) ? list : []);
+        }
+      } catch {
+        if (active) setMentors([]);
+      } finally {
+        if (active) setMentorsLoading(false);
+      }
     };
     loadMentors();
     return () => { active = false; };
-  }, [form.college, form.department, form.role]);
+  }, [form.college, form.department, customDept, form.role]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -90,6 +103,11 @@ const RegisterPage = () => {
     const deptToUse = form.department === 'Other' ? customDept.trim() : form.department;
     if (form.department === 'Other' && !deptToUse) {
       showToast('Please enter a department name', 'error');
+      return;
+    }
+
+    if (form.role === ROLES.STUDENT && (!form.mentorName || !form.mentorName.trim())) {
+      showToast('Please select a registered mentor to complete registration', 'warning');
       return;
     }
 
@@ -283,17 +301,44 @@ const RegisterPage = () => {
                 <input type="text" className="input-field" placeholder="Your full name" value={form.name} onChange={e => set('name', e.target.value)} required />
               </div>
 
-              {/* Mentor name (Student only) */}
+              {/* Mentor selection (Student only) */}
               {form.role === ROLES.STUDENT && (
                 <div>
-                  <label className="label-field">Mentor Name</label>
-                  {mentors.length > 0 ? (
-                    <select className="select-field" value={form.mentorName} onChange={e => set('mentorName', e.target.value)} required>
-                      <option value="">Select Mentor</option>
-                      {mentors.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                    </select>
-                  ) : (
-                    <input type="text" className="input-field" placeholder="Enter mentor name" value={form.mentorName} onChange={e => set('mentorName', e.target.value)} required />
+                  <label className="label-field">Select Mentor</label>
+                  <select
+                    className="select-field"
+                    value={form.mentorName}
+                    onChange={e => {
+                      const selectedName = e.target.value;
+                      const selectedMentor = mentors.find(m => m.name === selectedName);
+                      setForm(f => ({
+                        ...f,
+                        mentorName: selectedName,
+                        mentorId: selectedMentor ? selectedMentor.id : ''
+                      }));
+                    }}
+                    required
+                    disabled={mentorsLoading || !form.college || !(form.department === 'Other' ? customDept.trim() : form.department)}
+                  >
+                    <option value="">
+                      {mentorsLoading
+                        ? 'Loading mentors from database...'
+                        : !form.college || !(form.department === 'Other' ? customDept.trim() : form.department)
+                        ? 'Please select College and Department first'
+                        : mentors.length > 0
+                        ? 'Choose a Mentor from Database'
+                        : 'No mentors found for this department'}
+                    </option>
+                    {mentors.map(m => (
+                      <option key={m.id} value={m.name}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                  {mentors.length === 0 && !mentorsLoading && form.college && (form.department === 'Other' ? customDept.trim() : form.department) && (
+                    <p className="text-xs text-rose-500 mt-1">
+                      No approved mentors found for this department. A registered mentor from this department must be available before you can complete registration.
+                    </p>
                   )}
                 </div>
               )}

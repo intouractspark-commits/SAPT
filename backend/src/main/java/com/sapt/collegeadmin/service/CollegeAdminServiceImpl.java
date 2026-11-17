@@ -381,6 +381,7 @@ public class CollegeAdminServiceImpl implements CollegeAdminService {
         String collegeId = requireCollegeId(admin);
 
         return userRepository.findByCollegeIdAndRole(collegeId, role).stream()
+                .filter(u -> u.getOtpCode() == null) // Only show email-verified accounts
                 .map(this::mapToUserSummary)
                 .collect(Collectors.toList());
     }

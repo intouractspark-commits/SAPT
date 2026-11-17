@@ -85,7 +85,8 @@ public class SecurityConfig {
                     "/auth/mentors",
                     "/submission/files/download",
                     "/reviews",
-                    "/reviews/**"
+                    "/reviews/**",
+                    "/dev/**"
                 ).permitAll()
 
                 // ---- All other requests require authentication ----

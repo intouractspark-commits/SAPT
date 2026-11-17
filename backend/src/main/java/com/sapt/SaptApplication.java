@@ -45,6 +45,11 @@ public class SaptApplication {
         System.out.printf("[SAPT] Dotenv: loaded %d environment entr%s.%n",
                 dotenv.entries().size(),
                 dotenv.entries().size() == 1 ? "y" : "ies");
+
+        // Ensure Java JNDI uses reliable DNS for mongodb+srv:// resolution on Windows
+        if (System.getProperty("java.naming.provider.url") == null) {
+            System.setProperty("java.naming.provider.url", "dns://8.8.8.8");
+        }
     }
 
     public static void main(String[] args) {
